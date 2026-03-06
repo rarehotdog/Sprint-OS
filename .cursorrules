@@ -1,0 +1,40 @@
+# GMAT 805 - Cursor Rules (v3.0)
+
+## Context
+GMAT Focus 805점 PWA.
+항상 루트 `SPEC.md`를 우선 참조한다.
+오답 리포트 Quick/Deep 하이브리드가 앱의 핵심 가치다.
+
+## Stack
+Next.js App Router + TypeScript + Supabase + Tailwind (dark-first) + Zustand + React Query + Recharts + Claude API
+
+## Product Guardrails
+1. 풀이 UI는 미니멀 유지 (문제 집중).
+2. Pre-Think는 선지 보기 전에 완료되어야 한다.
+3. Quick 리포트는 세션 중 3문장, 1분 내 완료를 목표로 한다.
+4. Deep 리포트는 Quick 확장 + AI 4필드 생성 흐름이다.
+5. 셀프 테스트는 단계별 가림 인출 복습으로 설계한다.
+
+## Domain Terms
+- Quick: `my_frame`, `correct_mechanism`, `next_tool`
+- Deep: Quick 확장 + `mechanism_english`, `logic_comparison`, `sub_report`, AI 필드
+- Pre-Think:
+  - CR: C/P/A/Gap
+  - RC: 문단 태깅
+  - QR: 제약/접근
+  - DI: label/unit/axis/legend
+  - DS: Yes/No 재표현 + sufficiency
+- Daily Win: V Sprint + Q/DI Sprint + Quick 5 + Deep 3
+
+## AI Rules
+1. AI는 사용자 텍스트 입력 이후에만 확장 분석을 생성한다.
+2. AI 출력은 deterministic JSON shape를 우선한다.
+3. AI가 사용자 원문을 대체하면 안 되며, 나란히 보여야 한다.
+4. 정답 판정을 AI가 임의로 발명하지 않는다.
+
+## Engineering Rules
+1. SOLID, Clean Architecture 지향.
+2. 단순한 구현을 우선하고 불필요한 추상화를 피한다.
+3. 비즈니스 로직은 컴포넌트 밖(`src/lib`, store, service)에 둔다.
+4. 타입 안정성을 유지하고 enum/union을 명시한다.
+5. 반복되는 패턴은 재사용 컴포넌트/유틸로 통일한다.
