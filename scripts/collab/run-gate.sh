@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mode="${1:-local}"
+
 "$(dirname "$0")/verify-ownership.sh"
 
-npm run lint
-npm run typecheck
-npm run test
+if [[ "$mode" == "strict" ]]; then
+  npm run lint
+  npm run typecheck
+  npm run test
+  echo "Strict gate passed."
+  exit 0
+fi
 
-echo "Gate passed."
+npm run lint -- --dir src/lib --dir src/app/api --dir tests
+npx tsc -p tsconfig.codex.json --noEmit
+npm run test -- tests/report-contracts.test.ts tests/review-queue.test.ts
+
+echo "Local gate passed."

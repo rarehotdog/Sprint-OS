@@ -14,11 +14,16 @@
 1. Start turn with a clean tree for your branch policy: `scripts/collab/check-clean.sh`.
 2. Work only in your owned paths.
 3. End turn with at least one commit.
-4. Run gate before handoff: `scripts/collab/run-gate.sh`.
+4. Run local gate before handoff: `scripts/collab/run-gate.sh`.
 
 Notes:
 - In single-workspace mode, Codex may ignore Cursor-only untracked files.
 - Codex must still keep tracked changes clean before handoff.
+
+Gate modes:
+- Local gate (default): ownership + Codex-owned lint/typecheck + Codex tests.
+- Strict gate: ownership + full `lint/typecheck/test`.
+- Use strict gate at integration time only.
 
 ## Cursor sync rule
 - On `cursor/task-5-6-ui-solve-quick` only:
@@ -28,6 +33,7 @@ Notes:
 - Build integration branch with fixed order:
 - `scripts/collab/prepare-integration.sh`
 - Merge order is always foundation -> cursor -> review-core.
+- Integration script runs strict gate automatically.
 
 ## Contract freeze
 - UI must import shared contracts and not redefine payload shapes.

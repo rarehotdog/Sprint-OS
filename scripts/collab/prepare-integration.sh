@@ -14,9 +14,7 @@ git checkout -B "$integration_branch" "$foundation_branch"
 git merge --no-ff "$cursor_branch" -m "merge: cursor ui"
 git merge --no-ff "$review_branch" -m "merge: codex review-core"
 
-npm run lint
-npm run typecheck
-npm run test
+"$(dirname "$0")/run-gate.sh" strict
 
 echo "Integration branch '$integration_branch' is ready."
 echo "Return to previous branch with: git checkout $current_branch"
