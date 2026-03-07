@@ -2,7 +2,10 @@
 set -euo pipefail
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
-mapfile -t changed_files < <("$(dirname "$0")/_changed_files.sh")
+changed_files=()
+while IFS= read -r line; do
+  changed_files+=("$line")
+done < <("$(dirname "$0")/_changed_files.sh")
 
 if [[ ${#changed_files[@]} -eq 0 ]]; then
   echo "No changed files. Ownership check skipped."
