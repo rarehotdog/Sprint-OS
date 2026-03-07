@@ -130,6 +130,7 @@ export type ErrorSubReport = {
 export interface ErrorReport {
   id: UUID;
   attempt_id: UUID;
+  review_queue_id: UUID | null;
   report_mode: ReportMode;
   my_frame: string;
   correct_mechanism: string;

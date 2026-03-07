@@ -1,5 +1,6 @@
 import type { AnalyzeReportOutput, CreateQuickReportInput, DeepenReportInput } from "@/lib/contracts/report-contracts";
 import type { ErrorReport, Rule } from "@/lib/types";
+import { resetQueueStoreForTests, seedQueueItem } from "@/lib/server/review-queue-store";
 
 interface MemoryDb {
   reports: Map<string, ErrorReport>;
@@ -43,9 +44,11 @@ export function createQuickReport(input: CreateQuickReportInput): {
   createdRule: Rule | null;
 } {
   const timestamp = now();
+  const reviewQueueId = crypto.randomUUID();
   const report: ErrorReport = {
     id: crypto.randomUUID(),
     attempt_id: input.attempt_id,
+    review_queue_id: reviewQueueId,
     report_mode: "quick",
     my_frame: input.my_frame,
     correct_mechanism: input.correct_mechanism,
@@ -65,6 +68,17 @@ export function createQuickReport(input: CreateQuickReportInput): {
 
   const db = getMemoryDb();
   db.reports.set(report.id, report);
+  seedQueueItem({
+    id: reviewQueueId,
+    // TODO: replace with real problem_id linkage when attempt/problem persistence is wired.
+    problem_id: crypto.randomUUID(),
+    next_review_at: timestamp,
+    interval_days: 1,
+    ease_factor: 2.5,
+    repetitions: 0,
+    priority_score: 1,
+    created_at: timestamp,
+  });
 
   if (!input.save_as_rule) {
     return { report, createdRule: null };
@@ -137,4 +151,5 @@ export function resetReportStoreForTests(): void {
     reports: new Map<string, ErrorReport>(),
     rules: [],
   };
+  resetQueueStoreForTests();
 }

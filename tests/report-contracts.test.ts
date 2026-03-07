@@ -11,6 +11,7 @@ import {
   listPendingDeepReports,
   resetReportStoreForTests,
 } from "../src/lib/server/report-store";
+import { getQueueItem } from "../src/lib/server/review-queue-store";
 
 describe("quick report contract", () => {
   it("rejects payloads when quick required fields are missing", () => {
@@ -41,6 +42,8 @@ describe("quick -> deep flow", () => {
 
     expect(listPendingDeepReports()).toHaveLength(1);
     expect(quick.report_mode).toBe("quick");
+    expect(quick.review_queue_id).toBeTruthy();
+    expect(getQueueItem(quick.review_queue_id as string)).not.toBeNull();
 
     const deep = deepenReport({
       report_id: quick.id,
@@ -68,6 +71,7 @@ describe("quick -> deep flow", () => {
     const updated = attachAiAnalysis(deep.id, analysis);
 
     expect(updated.report_mode).toBe("deep");
+    expect(updated.review_queue_id).toBe(quick.review_queue_id);
     expect(updated.deepened_at).not.toBeNull();
     expect(updated.ai_core_principle).toContain("Strengthen");
     expect(listPendingDeepReports()).toHaveLength(0);
