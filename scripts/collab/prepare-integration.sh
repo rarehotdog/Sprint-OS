@@ -20,6 +20,7 @@ git checkout -B "$integration_branch" "$foundation_branch"
 git merge --no-ff "$cursor_branch" -m "merge: cursor ui"
 git merge --no-ff "$review_branch" -m "merge: codex review-core"
 
+export PATH="$workspace_root/node_modules/.bin:$PATH"
 "$workspace_root/scripts/collab/run-gate.sh" strict
 popd >/dev/null
 
