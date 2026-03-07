@@ -15,6 +15,6 @@ fi
 
 npm run lint -- --dir src/lib --dir src/app/api --dir tests
 npx tsc -p tsconfig.codex.json --noEmit
-npm run test -- tests/report-contracts.test.ts tests/review-queue.test.ts
+npm run test -- tests/report-contracts.test.ts tests/review-queue.test.ts tests/solve-api.test.ts
 
 echo "Local gate passed."

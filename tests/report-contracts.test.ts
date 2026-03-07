@@ -12,6 +12,11 @@ import {
   resetReportStoreForTests,
 } from "../src/lib/server/report-store";
 import { getQueueItem } from "../src/lib/server/review-queue-store";
+import {
+  createAttempt,
+  createSession,
+  resetSolveStoreForTests,
+} from "../src/lib/server/solve-store";
 
 describe("quick report contract", () => {
   it("rejects payloads when quick required fields are missing", () => {
@@ -28,6 +33,7 @@ describe("quick report contract", () => {
 describe("quick -> deep flow", () => {
   it("moves a quick report to deep and stores AI analysis", () => {
     resetReportStoreForTests();
+    resetSolveStoreForTests();
 
     const { report: quick } = createQuickReport({
       attempt_id: crypto.randomUUID(),
@@ -75,6 +81,43 @@ describe("quick -> deep flow", () => {
     expect(updated.deepened_at).not.toBeNull();
     expect(updated.ai_core_principle).toContain("Strengthen");
     expect(listPendingDeepReports()).toHaveLength(0);
+  });
+
+  it("uses attempt problem_id when seeding review queue", () => {
+    resetReportStoreForTests();
+    resetSolveStoreForTests();
+
+    const session = createSession({
+      session_type: "review",
+      recipe: null,
+      duration_planned_min: 30,
+      meta: {},
+    });
+
+    const attempt = createAttempt({
+      session_id: session.id,
+      problem_id: crypto.randomUUID(),
+      user_answer: 2,
+      is_correct: false,
+      time_spent_sec: 95,
+      exceeded_cutoff: false,
+      confidence: "unsure",
+      pre_think: null,
+    });
+
+    const { report } = createQuickReport({
+      attempt_id: attempt.id,
+      report_mode: "quick",
+      my_frame: "프레임 오류",
+      correct_mechanism: "결론-가정 연결",
+      next_tool: "Q/F 고정",
+      failure_stage: "strategy",
+      error_type: "scope",
+      save_as_rule: false,
+    });
+
+    const queue = getQueueItem(report.review_queue_id as string);
+    expect(queue?.problem_id).toBe(attempt.problem_id);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { AnalyzeReportOutput, CreateQuickReportInput, DeepenReportInput } from "@/lib/contracts/report-contracts";
 import type { ErrorReport, Rule } from "@/lib/types";
 import { resetQueueStoreForTests, seedQueueItem } from "@/lib/server/review-queue-store";
+import { getAttemptById } from "@/lib/server/solve-store";
 
 interface MemoryDb {
   reports: Map<string, ErrorReport>;
@@ -68,10 +69,10 @@ export function createQuickReport(input: CreateQuickReportInput): {
 
   const db = getMemoryDb();
   db.reports.set(report.id, report);
+  const sourceAttempt = getAttemptById(input.attempt_id);
   seedQueueItem({
     id: reviewQueueId,
-    // TODO: replace with real problem_id linkage when attempt/problem persistence is wired.
-    problem_id: crypto.randomUUID(),
+    problem_id: sourceAttempt?.problem_id ?? crypto.randomUUID(),
     next_review_at: timestamp,
     interval_days: 1,
     ease_factor: 2.5,
