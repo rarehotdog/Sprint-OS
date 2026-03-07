@@ -28,16 +28,58 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function ensureReviewQueue(report: ErrorReport): ErrorReport {
+  if (report.review_queue_id) {
+    return report;
+  }
+
+  const queueId = crypto.randomUUID();
+  const sourceAttempt = getAttemptById(report.attempt_id);
+  const timestamp = now();
+
+  const updated: ErrorReport = {
+    ...report,
+    review_queue_id: queueId,
+  };
+
+  const db = getMemoryDb();
+  db.reports.set(updated.id, updated);
+
+  seedQueueItem({
+    id: queueId,
+    problem_id: sourceAttempt?.problem_id ?? crypto.randomUUID(),
+    next_review_at: timestamp,
+    interval_days: 1,
+    ease_factor: 2.5,
+    repetitions: 0,
+    priority_score: 1,
+    created_at: timestamp,
+  });
+
+  return updated;
+}
+
 export function listReports(): ErrorReport[] {
-  return Array.from(getMemoryDb().reports.values()).sort((a, b) =>
+  const reports = Array.from(getMemoryDb().reports.values()).sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
   );
+
+  return reports.map((report) => ensureReviewQueue(report));
 }
 
 export function listPendingDeepReports(): ErrorReport[] {
   return listReports().filter(
     (report) => report.report_mode === "quick" && report.deepened_at === null,
   );
+}
+
+export function getReportById(reportId: string): ErrorReport | null {
+  const found = getMemoryDb().reports.get(reportId);
+  if (!found) {
+    return null;
+  }
+
+  return ensureReviewQueue(found);
 }
 
 export function createQuickReport(input: CreateQuickReportInput): {

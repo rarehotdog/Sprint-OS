@@ -8,6 +8,7 @@ import {
   attachAiAnalysis,
   createQuickReport,
   deepenReport,
+  listReports,
   listPendingDeepReports,
   resetReportStoreForTests,
 } from "../src/lib/server/report-store";
@@ -118,6 +119,41 @@ describe("quick -> deep flow", () => {
 
     const queue = getQueueItem(report.review_queue_id as string);
     expect(queue?.problem_id).toBe(attempt.problem_id);
+  });
+
+  it("backfills review_queue_id for legacy reports during list", () => {
+    resetReportStoreForTests();
+    resetSolveStoreForTests();
+
+    const { report } = createQuickReport({
+      attempt_id: crypto.randomUUID(),
+      report_mode: "quick",
+      my_frame: "legacy frame",
+      correct_mechanism: "legacy mechanism",
+      next_tool: "legacy tool",
+      failure_stage: "reading",
+      error_type: "legacy",
+      save_as_rule: false,
+    });
+
+    const db = (globalThis as typeof globalThis & {
+      __gmatMemoryDb__?: { reports: Map<string, { review_queue_id: string | null }> };
+    }).__gmatMemoryDb__;
+
+    if (!db) {
+      throw new Error("Expected in-memory report db");
+    }
+
+    const legacy = db.reports.get(report.id);
+    if (!legacy) {
+      throw new Error("Expected report to exist");
+    }
+
+    db.reports.set(report.id, { ...legacy, review_queue_id: null });
+
+    const listed = listReports().find((item) => item.id === report.id);
+    expect(listed?.review_queue_id).toBeTruthy();
+    expect(getQueueItem(listed?.review_queue_id as string)).not.toBeNull();
   });
 });
 
