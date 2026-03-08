@@ -67,6 +67,10 @@ export function listReports(): ErrorReport[] {
   return reports.map((report) => ensureReviewQueue(report));
 }
 
+export function listRules(): Rule[] {
+  return [...getMemoryDb().rules].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
 export function listPendingDeepReports(): ErrorReport[] {
   return listReports().filter(
     (report) => report.report_mode === "quick" && report.deepened_at === null,

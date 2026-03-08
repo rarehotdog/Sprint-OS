@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { deepenReportSchema } from "@/lib/contracts/report-contracts";
 import { analyzeReportWithClaude } from "@/lib/server/ai";
+import { promoteDeepReportToKnowledgeStack } from "@/lib/server/knowledge-stack-store";
 import { attachAiAnalysis, deepenReport } from "@/lib/server/report-store";
+import { buildSummaryBooklet } from "@/lib/server/summary-booklet-store";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -22,6 +24,17 @@ export async function POST(request: Request) {
     const deepened = deepenReport(parsed.data);
 
     if (!parsed.data.generate_ai) {
+      try {
+        promoteDeepReportToKnowledgeStack(deepened);
+      } catch {
+        // Preserve deepen success even when promotion fails.
+      }
+      // Consolidation step completed: refresh booklet snapshots in background.
+      try {
+        buildSummaryBooklet({ trigger: "consolidation", version: "all" });
+      } catch {
+        // Preserve deepen success even when booklet refresh fails.
+      }
       return NextResponse.json({ report: deepened, ai_analysis: null });
     }
 
@@ -35,6 +48,18 @@ export async function POST(request: Request) {
     });
 
     const updated = attachAiAnalysis(deepened.id, aiAnalysis);
+
+    try {
+      promoteDeepReportToKnowledgeStack(updated);
+    } catch {
+      // Preserve deepen success even when promotion fails.
+    }
+
+    try {
+      buildSummaryBooklet({ trigger: "consolidation", version: "all" });
+    } catch {
+      // Preserve deepen success even when booklet refresh fails.
+    }
 
     return NextResponse.json({
       report: updated,

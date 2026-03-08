@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createAttemptSchema } from "@/lib/contracts/solve-contracts";
-import { createAttempt, listAttempts } from "@/lib/server/solve-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
+  const repositories = getServerRepositories();
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("session_id") ?? undefined;
 
@@ -11,10 +12,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid session_id" }, { status: 400 });
   }
 
-  return NextResponse.json({ attempts: listAttempts(sessionId) });
+  return NextResponse.json({ attempts: repositories.solve.listAttempts(sessionId) });
 }
 
 export async function POST(request: Request) {
+  const repositories = getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = createAttemptSchema.safeParse(body);
 
@@ -29,8 +31,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const attempt = createAttempt(parsed.data);
-    return NextResponse.json({ attempt }, { status: 201 });
+    const attempt = repositories.solve.createAttempt(parsed.data);
+    return NextResponse.json(
+      {
+        attempt,
+        run_state: repositories.solve.getSessionRunState(parsed.data.session_id),
+      },
+      { status: 201 },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const status = message === "Session not found" ? 404 : 500;
