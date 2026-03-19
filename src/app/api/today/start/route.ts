@@ -4,25 +4,81 @@ import {
   postTodayStartResponseSchema,
   postTodayStartSchema,
 } from "@/lib/contracts/today-contracts";
+import { buildProblemsWorkbenchHref } from "@/lib/problems-ui";
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
-import type { DailyPlan, Section, SessionType } from "@/lib/types";
+import type { DailyPlan, Section, SessionType, TodayQueueItem } from "@/lib/types";
 
-function getCurrentBlock(plan: DailyPlan) {
+function sessionTypeForQueue(queue: TodayQueueItem[]): SessionType {
+  const sections = Array.from(new Set(queue.map((item) => item.section)));
+
+  if (sections.length === 1) {
+    if (sections[0] === "verbal") return "sprint_verbal";
+    if (sections[0] === "quant") return "sprint_quant";
+    return "sprint_di";
+  }
+
+  return "drill";
+}
+
+function buildSectionMetadata(queue: TodayQueueItem[]): {
+  section_hint: Section | null;
+  section_order: Section[];
+  section_bounds: Array<{ section: Section; start_index: number; end_index: number }>;
+} {
+  const sectionOrder: Section[] = [];
+  const sectionBounds: Array<{ section: Section; start_index: number; end_index: number }> = [];
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const item = queue[index];
+    const last = sectionBounds[sectionBounds.length - 1];
+
+    if (last && last.section === item.section) {
+      last.end_index = index + 1;
+      continue;
+    }
+
+    sectionOrder.push(item.section);
+    sectionBounds.push({
+      section: item.section,
+      start_index: index,
+      end_index: index + 1,
+    });
+  }
+
+  return {
+    section_hint: queue[0]?.section ?? null,
+    section_order: Array.from(new Set(sectionOrder)),
+    section_bounds: sectionBounds,
+  };
+}
+
+function findMainBlock(plan: DailyPlan): DailyPlan["blocks"][number] | null {
   return (
-    plan.blocks.find((block) => block.status === "in_progress") ??
-    plan.blocks.find((block) => block.status === "pending") ??
+    plan.blocks.find((block) => block.block_type === "main_block" && block.status !== "completed") ??
+    plan.blocks.find((block) => block.block_type === "main_block") ??
     null
   );
 }
 
-function sessionTypeForSection(section: Section): SessionType {
-  if (section === "verbal") return "sprint_verbal";
-  if (section === "quant") return "sprint_quant";
-  return "sprint_di";
+function buildSolveRedirect(sessionId: string, focusProblemId: string | null, queue: TodayQueueItem[]): string {
+  const params = new URLSearchParams();
+  const focusIndex = focusProblemId ? queue.findIndex((item) => item.problem_id === focusProblemId) : -1;
+  const focusItem = focusIndex >= 0 ? queue[focusIndex] : queue[0];
+
+  if (focusIndex >= 0) {
+    params.set("q", String(focusIndex + 1));
+  }
+
+  if (focusItem?.section) {
+    params.set("section", focusItem.section);
+  }
+
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return `/solve/${sessionId}${suffix}`;
 }
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = postTodayStartSchema.safeParse(body);
 
@@ -36,47 +92,62 @@ export async function POST(request: Request) {
     );
   }
 
-  const started = repositories.today.start(parsed.data);
-  const currentBlock = getCurrentBlock(started.plan);
+  const started = await repositories.today.start(parsed.data);
+  const pendingQueue = started.today_queue.filter((item) => item.status !== "completed");
 
-  if (
-    started.next_action.type === "solve" &&
-    currentBlock?.block_type === "main_block" &&
-    currentBlock.section_hint
-  ) {
-    const linkedSession = currentBlock.linked_session_id
-      ? repositories.solve.getSessionById(currentBlock.linked_session_id)
-      : null;
-
-    const session =
-      linkedSession ??
-      repositories.solve.createSession({
-        session_type: sessionTypeForSection(currentBlock.section_hint),
-        recipe: "today_auto_start",
-        duration_planned_min: currentBlock.minutes,
-        meta: {
-          section: currentBlock.section_hint,
-          section_hint: currentBlock.section_hint,
-          sprint_duration_min: currentBlock.minutes,
-          today_date: parsed.data.date,
-          source: "today_start",
-        },
-      });
-
-    const updatedPlan = linkedSession
-      ? started.plan
-      : repositories.today.attachSession(parsed.data.date, currentBlock.id, session.id);
-
+  if (started.resume_session_id) {
     return NextResponse.json(
       postTodayStartResponseSchema.parse({
         ...started,
-        plan: updatedPlan,
-        redirect_to: `/solve/${session.id}?section=${encodeURIComponent(
-          currentBlock.section_hint,
-        )}&duration=${currentBlock.minutes}`,
+        redirect_to: buildSolveRedirect(started.resume_session_id, started.focus_problem_id, pendingQueue),
       }),
     );
   }
 
-  return NextResponse.json(postTodayStartResponseSchema.parse(started));
+  if (pendingQueue.length === 0) {
+    const problemsHref = buildProblemsWorkbenchHref(findMainBlock(started.plan)?.section_hint ?? null);
+
+    return NextResponse.json(
+      postTodayStartResponseSchema.parse({
+        ...started,
+        redirect_to: started.next_action.type === "booklet" ? "/summary" : problemsHref,
+      }),
+    );
+  }
+
+  const queueMeta = pendingQueue.map((item) => ({
+    problem_id: item.problem_id,
+    source: item.source,
+    review_queue_id: item.review_queue_id,
+    due_at: item.due_at,
+  }));
+  const solveContext = buildSectionMetadata(pendingQueue);
+  const session = await repositories.solve.createSession({
+    session_type: sessionTypeForQueue(pendingQueue),
+    recipe: "today_queue",
+    duration_planned_min: started.queue_counts.estimated_minutes || started.checkin.available_minutes,
+    problem_ids: pendingQueue.map((item) => item.problem_id),
+    meta: {
+      source: "today_start",
+      today_date: parsed.data.date,
+      today_queue: queueMeta,
+      section_hint: solveContext.section_hint,
+      section_order: solveContext.section_order,
+      section_bounds: solveContext.section_bounds,
+    },
+  });
+
+  const mainBlock = findMainBlock(started.plan);
+  const updatedPlan = mainBlock
+    ? await repositories.today.attachSession(parsed.data.date, mainBlock.id, session.id)
+    : started.plan;
+
+  return NextResponse.json(
+    postTodayStartResponseSchema.parse({
+      ...started,
+      plan: updatedPlan,
+      resume_session_id: session.id,
+      redirect_to: buildSolveRedirect(session.id, pendingQueue[0]?.problem_id ?? null, pendingQueue),
+    }),
+  );
 }

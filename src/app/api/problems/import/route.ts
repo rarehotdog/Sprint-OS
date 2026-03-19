@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { importProblemResponseSchema, importProblemSchema } from "@/lib/contracts/problem-contracts";
-import { createProblem, getProblemReviewStatus } from "@/lib/server/problems-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 import { parseSectionHybrid } from "@/lib/server/section-parser";
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = importProblemSchema.safeParse(body);
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
     ]),
   );
 
-  const problem = createProblem({
+  const problem = await repositories.problems.create({
     section: parsed.data.section,
     sub_type: parsed.data.sub_type,
     difficulty: parsed.data.difficulty,
@@ -47,13 +48,21 @@ export async function POST(request: Request) {
     },
     tags,
     source: "manual_capture",
+    source_type: "manual",
+    source_name: parsed.data.source_name,
+    source_url: parsed.data.source_url,
+    license_note: parsed.data.license_note,
+    parser_confidence: parser.confidence,
+    curation_status: "accepted",
+    corpus_tier: "gold",
+    last_curated_at: new Date().toISOString(),
   });
 
   return NextResponse.json(
     importProblemResponseSchema.parse({
       problem,
       parser,
-      review_status: getProblemReviewStatus(problem),
+      review_status: await repositories.problems.getReviewStatus(problem),
     }),
     { status: 201 },
   );

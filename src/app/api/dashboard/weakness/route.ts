@@ -4,9 +4,11 @@ import {
   weaknessDashboardResponseSchema,
   weaknessQuerySchema,
 } from "@/lib/contracts/dashboard-contracts";
+import { ensureCanonicalStateLoaded } from "@/lib/server/persistence/repositories";
 import { getWeaknessAnalytics } from "@/lib/server/weakness-analytics";
 
 export async function GET(request: Request) {
+  await ensureCanonicalStateLoaded();
   const url = new URL(request.url);
   const daysRaw = url.searchParams.get("days") ?? undefined;
   const sectionRaw = url.searchParams.get("section") ?? undefined;

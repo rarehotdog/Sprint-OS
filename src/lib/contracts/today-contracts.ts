@@ -86,6 +86,33 @@ export const todayBookletCandidateSchema = z
   })
   .strict();
 
+export const todayQueueItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    problem_id: z.string().uuid(),
+    review_queue_id: z.string().uuid().nullable(),
+    section: problemSectionSchema,
+    sub_type: nonEmpty,
+    source: z.enum(["due_review", "new"]),
+    status: z.enum(["current", "pending", "completed"]),
+    title: nonEmpty,
+    due_at: z.string().datetime().nullable(),
+  })
+  .strict();
+
+export const todayQueueCountsSchema = z
+  .object({
+    due_review: z.number().int().nonnegative(),
+    new_problems: z.number().int().nonnegative(),
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    target_due_review: z.number().int().nonnegative(),
+    target_new_problems: z.number().int().nonnegative(),
+    estimated_minutes: z.number().int().nonnegative(),
+    shortage: z.boolean(),
+  })
+  .strict();
+
 export const todaySnapshotSchema = z
   .object({
     checkin: dailyCheckinSchema.nullable(),
@@ -114,6 +141,10 @@ export const todaySnapshotSchema = z
     progress: todayProgressSchema,
     booklet_candidates: z.array(todayBookletCandidateSchema),
     next_action: todayNextActionSchema.nullable(),
+    resume_session_id: z.string().uuid().nullable(),
+    today_queue: z.array(todayQueueItemSchema),
+    focus_problem_id: z.string().uuid().nullable(),
+    queue_counts: todayQueueCountsSchema,
   })
   .strict();
 
@@ -206,6 +237,10 @@ export const postTodayStartResponseSchema = z
     progress: todayProgressSchema,
     next_action: todayNextActionSchema,
     redirect_to: z.string().startsWith("/"),
+    resume_session_id: z.string().uuid().nullable(),
+    today_queue: z.array(todayQueueItemSchema),
+    focus_problem_id: z.string().uuid().nullable(),
+    queue_counts: todayQueueCountsSchema,
   })
   .strict();
 

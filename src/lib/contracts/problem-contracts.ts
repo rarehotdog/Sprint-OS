@@ -7,6 +7,10 @@ export const problemDifficultySchema = z.enum(["easy", "medium", "hard"]);
 export const parserModeSchema = z.enum(["rule", "ai_correction"]);
 export const generationModeSchema = z.enum(["openai", "mock"]);
 export const reviewStatusSchema = z.enum(["accepted", "needs_review"]);
+export const problemSourceTypeSchema = z.enum(["manual", "external", "generated"]);
+export const problemCurationStatusSchema = z.enum(["draft", "needs_review", "accepted", "rejected"]);
+export const problemCorpusTierSchema = z.enum(["gold", "scale", "filler"]);
+export const problemImportInputTypeSchema = z.enum(["text", "csv"]);
 
 export const problemContentSchema = z.object({
   stem: nonEmpty,
@@ -58,6 +62,20 @@ export const createProblemSchema = z.object({
   content: problemContentSchema,
   tags: z.array(nonEmpty).optional().default([]),
   source: z.string().trim().optional().default("manual_capture"),
+  source_type: problemSourceTypeSchema.optional().default("manual"),
+  source_name: z.string().trim().optional(),
+  source_url: z.string().trim().optional(),
+  external_id: z.string().trim().optional(),
+  license_note: z.string().trim().optional(),
+  parser_confidence: z.number().min(0).max(1).nullable().optional().default(null),
+  curation_status: problemCurationStatusSchema.optional().default("accepted"),
+  corpus_tier: problemCorpusTierSchema.optional().default("gold"),
+  canonical_hash: z.string().trim().optional(),
+  difficulty_estimate: problemDifficultySchema.nullable().optional().default(null),
+  explanation_quality: z.number().min(0).max(1).nullable().optional().default(null),
+  import_batch_id: z.string().uuid().nullable().optional().default(null),
+  last_curated_at: z.string().datetime().nullable().optional().default(null),
+  curated_by: z.string().trim().nullable().optional().default(null),
 });
 
 export const generateAiProblemSchema = z.object({
@@ -98,6 +116,9 @@ export const importProblemSchema = z
     explanation: z.string().trim().optional(),
     tags: z.array(nonEmpty).optional().default([]),
     image_ref: z.string().trim().optional(),
+    source_name: z.string().trim().optional(),
+    source_url: z.string().trim().optional(),
+    license_note: z.string().trim().optional(),
   })
   .superRefine((value, context) => {
     if (
@@ -112,11 +133,16 @@ export const importProblemSchema = z
     }
   });
 
-export const reviewStatusActionSchema = z.enum(["accept", "hold", "revise"]);
+export const reviewStatusActionSchema = z.enum(["accept", "hold", "revise", "reject"]);
 
 export const problemListQuerySchema = z
   .object({
     section: problemSectionSchema.optional(),
+    solve_ready: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => value === "1" || value === "true"),
     problem_ids: z
       .string()
       .trim()
@@ -144,6 +170,20 @@ const problemEntitySchema = z
     content: z.record(z.string(), z.unknown()),
     tags: z.array(z.string()),
     source: z.string().nullable(),
+    source_type: problemSourceTypeSchema.nullable().optional().default(null),
+    source_name: z.string().trim().nullable().optional().default(null),
+    source_url: z.string().trim().nullable().optional().default(null),
+    external_id: z.string().trim().nullable().optional().default(null),
+    license_note: z.string().trim().nullable().optional().default(null),
+    parser_confidence: z.number().min(0).max(1).nullable().optional().default(null),
+    curation_status: problemCurationStatusSchema.nullable().optional().default(null),
+    corpus_tier: problemCorpusTierSchema.nullable().optional().default(null),
+    canonical_hash: z.string().trim().nullable().optional().default(null),
+    difficulty_estimate: problemDifficultySchema.nullable().optional().default(null),
+    explanation_quality: z.number().min(0).max(1).nullable().optional().default(null),
+    import_batch_id: z.string().uuid().nullable().optional().default(null),
+    last_curated_at: z.string().datetime().nullable().optional().default(null),
+    curated_by: z.string().trim().nullable().optional().default(null),
     created_at: z.string().datetime(),
   })
   .strict();
@@ -154,14 +194,30 @@ export const updateProblemReviewStatusSchema = z
     action: reviewStatusActionSchema,
     section: problemSectionSchema.optional(),
     sub_type: nonEmpty.optional(),
+    difficulty_estimate: problemDifficultySchema.optional(),
+    source_name: z.string().trim().optional(),
+    source_url: z.string().trim().optional(),
+    license_note: z.string().trim().optional(),
+    corpus_tier: problemCorpusTierSchema.optional(),
+    curated_by: z.string().trim().optional(),
     tags: z.array(nonEmpty).optional(),
     note: z.string().trim().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.action === "revise" && !value.section && !value.sub_type && !value.tags) {
+    if (
+      value.action === "revise" &&
+      !value.section &&
+      !value.sub_type &&
+      !value.difficulty_estimate &&
+      !value.source_name &&
+      !value.source_url &&
+      !value.license_note &&
+      !value.corpus_tier &&
+      !value.tags
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "revise action requires at least one of section/sub_type/tags",
+        message: "revise action requires at least one field to update",
         path: ["action"],
       });
     }
@@ -180,12 +236,16 @@ export const problemReviewStatusResponseSchema = z
     problem: problemEntitySchema,
     parser: parsedSectionResultSchema.nullable(),
     review_status: reviewStatusSchema,
+    duplicate_count: z.number().int().nonnegative(),
   })
   .strict();
 
 export const problemReviewStatusQuerySchema = z.object({
   problem_id: z.string().uuid().optional(),
   review_status: reviewStatusSchema.optional(),
+  curation_status: problemCurationStatusSchema.optional(),
+  corpus_tier: problemCorpusTierSchema.optional(),
+  import_batch_id: z.string().uuid().optional(),
   section: problemSectionSchema.optional(),
   source: nonEmpty.optional(),
   tag: nonEmpty.optional(),
@@ -199,6 +259,9 @@ export const problemReviewStatusListResponseSchema = z
     filters_applied: z
       .object({
         review_status: reviewStatusSchema.nullable(),
+        curation_status: problemCurationStatusSchema.nullable(),
+        corpus_tier: problemCorpusTierSchema.nullable(),
+        import_batch_id: z.string().uuid().nullable(),
         section: problemSectionSchema.nullable(),
         source: z.string().trim().nullable(),
         tag: z.string().trim().nullable(),
@@ -231,14 +294,66 @@ export const listProblemsResponseSchema = z
   })
   .strict();
 
-export type CreateProblemInput = z.infer<typeof createProblemSchema>;
+export const problemImportBatchSchema = z
+  .object({
+    id: z.string().uuid(),
+    input_type: problemImportInputTypeSchema,
+    source_name: z.string().trim().nullable(),
+    source_url: z.string().trim().nullable(),
+    license_note: z.string().trim().nullable(),
+    notes: z.string().trim().nullable(),
+    total_rows: z.number().int().nonnegative(),
+    created_rows: z.number().int().nonnegative(),
+    invalid_rows: z.number().int().nonnegative(),
+    duplicate_rows: z.number().int().nonnegative(),
+    created_at: z.string().datetime(),
+  })
+  .strict();
+
+export const bulkImportProblemsSchema = z.object({
+  input_type: problemImportInputTypeSchema,
+  raw_payload: nonEmpty,
+  source_name: z.string().trim().nullable().optional(),
+  source_url: z.string().trim().nullable().optional(),
+  license_note: z.string().trim().nullable().optional(),
+  notes: z.string().trim().nullable().optional(),
+});
+
+export const bulkImportProblemItemSchema = z
+  .object({
+    row_number: z.number().int().positive(),
+    problem: problemEntitySchema,
+    parser: parsedSectionResultSchema,
+    review_status: reviewStatusSchema,
+    duplicate_count: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const bulkImportProblemsResponseSchema = z
+  .object({
+    batch: problemImportBatchSchema,
+    items: z.array(bulkImportProblemItemSchema),
+    total_rows: z.number().int().nonnegative(),
+    created_rows: z.number().int().nonnegative(),
+    invalid_rows: z.number().int().nonnegative(),
+    duplicate_rows: z.number().int().nonnegative(),
+    errors: z.array(
+      z.object({
+        row_number: z.number().int().positive(),
+        message: nonEmpty,
+      }),
+    ),
+  })
+  .strict();
+
+export type CreateProblemInput = z.input<typeof createProblemSchema>;
 export type ProblemListQueryInput = z.infer<typeof problemListQuerySchema>;
 export type GenerateAiProblemInput = z.infer<typeof generateAiProblemSchema>;
 export type ParsedSectionResult = z.infer<typeof parsedSectionResultSchema>;
 export type GenerationMeta = z.infer<typeof generationMetaSchema>;
-export type ImportProblemInput = z.infer<typeof importProblemSchema>;
+export type ImportProblemInput = z.input<typeof importProblemSchema>;
 export type ImportProblemResponse = z.infer<typeof importProblemResponseSchema>;
-export type UpdateProblemReviewStatusInput = z.infer<typeof updateProblemReviewStatusSchema>;
+export type UpdateProblemReviewStatusInput = z.input<typeof updateProblemReviewStatusSchema>;
 export type ProblemReviewStatusResponse = z.infer<typeof problemReviewStatusResponseSchema>;
 export type ProblemReviewStatusQueryInput = z.infer<typeof problemReviewStatusQuerySchema>;
 export type ProblemReviewStatusListResponse = z.infer<typeof problemReviewStatusListResponseSchema>;
@@ -246,3 +361,6 @@ export type GeneratedProblemItem = z.infer<typeof generatedProblemItemSchema>;
 export type GenerateAiProblemResponse = z.infer<
   typeof generateAiProblemResponseSchema
 >;
+export type ProblemImportBatch = z.infer<typeof problemImportBatchSchema>;
+export type BulkImportProblemsInput = z.input<typeof bulkImportProblemsSchema>;
+export type BulkImportProblemsResponse = z.infer<typeof bulkImportProblemsResponseSchema>;

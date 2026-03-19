@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server";
 
 import { createQuickReportSchema } from "@/lib/contracts/report-contracts";
-import {
-  createQuickReport,
-  getReportById,
-  listPendingDeepReports,
-  listReports,
-} from "@/lib/server/report-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
   const reportId = url.searchParams.get("report_id");
   const mode = url.searchParams.get("mode");
   const limitRaw = url.searchParams.get("limit");
 
   if (reportId) {
-    const report = getReportById(reportId);
+    const report = await repositories.reports.getReportById(reportId);
     if (!report) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
@@ -23,7 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ report });
   }
 
-  let reports = listReports();
+  let reports = await repositories.reports.listReports();
   if (mode === "quick" || mode === "deep") {
     reports = reports.filter((report) => report.report_mode === mode);
   }
@@ -37,11 +33,12 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     reports,
-    pending_deep: listPendingDeepReports(),
+    pending_deep: await repositories.reports.listPendingDeepReports(),
   });
 }
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = createQuickReportSchema.safeParse(body);
 
@@ -55,7 +52,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const created = createQuickReport(parsed.data);
+  const created = await repositories.reports.createQuickReport(parsed.data);
 
   return NextResponse.json(
     {

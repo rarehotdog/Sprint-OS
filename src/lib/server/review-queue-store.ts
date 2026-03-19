@@ -37,6 +37,12 @@ export function listQueueItems(): ReviewQueueItem[] {
   );
 }
 
+export function seedQueueItems(items: ReviewQueueItem[]): void {
+  global.__gmatReviewQueueDb__ = {
+    items: new Map(items.map((item) => [item.id, item])),
+  };
+}
+
 export function resetQueueStoreForTests(): void {
   global.__gmatReviewQueueDb__ = {
     items: new Map<string, ReviewQueueItem>(),

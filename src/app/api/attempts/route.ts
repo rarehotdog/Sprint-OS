@@ -4,7 +4,7 @@ import { createAttemptSchema } from "@/lib/contracts/solve-contracts";
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("session_id") ?? undefined;
 
@@ -12,11 +12,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid session_id" }, { status: 400 });
   }
 
-  return NextResponse.json({ attempts: repositories.solve.listAttempts(sessionId) });
+  return NextResponse.json({ attempts: await repositories.solve.listAttempts(sessionId) });
 }
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = createAttemptSchema.safeParse(body);
 
@@ -31,11 +31,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const attempt = repositories.solve.createAttempt(parsed.data);
+    const attempt = await repositories.solve.createAttempt(parsed.data);
     return NextResponse.json(
       {
         attempt,
-        run_state: repositories.solve.getSessionRunState(parsed.data.session_id),
+        run_state: await repositories.solve.getSessionRunState(parsed.data.session_id),
       },
       { status: 201 },
     );

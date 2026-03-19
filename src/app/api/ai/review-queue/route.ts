@@ -4,14 +4,16 @@ import {
   sm2UpdateRequestSchema,
   sm2UpdateResponseSchema,
 } from "@/lib/contracts/report-contracts";
-import { getQueueItem, listQueueItems, upsertQueueItem } from "@/lib/server/review-queue-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 import { computeSm2Update } from "@/lib/server/sm2";
 
 export async function GET() {
-  return NextResponse.json({ queue: listQueueItems() });
+  const repositories = await getServerRepositories();
+  return NextResponse.json({ queue: await repositories.reviewQueue.listQueue() });
 }
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = sm2UpdateRequestSchema.safeParse(body);
 
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const item = getQueueItem(parsed.data.review_queue_id);
+  const item = await repositories.reviewQueue.getById(parsed.data.review_queue_id);
   if (!item) {
     return NextResponse.json({ error: "Review queue item not found" }, { status: 404 });
   }
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
     parsed.data.reviewed_at,
   );
 
-  upsertQueueItem({
+  await repositories.reviewQueue.upsert({
     ...item,
     next_review_at: updated.next_review_at,
     interval_days: updated.interval_days,

@@ -4,7 +4,7 @@ import { todayQuerySchema, todaySnapshotSchema } from "@/lib/contracts/today-con
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
 
   const parsed = todayQuerySchema.safeParse({
@@ -21,6 +21,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const snapshot = repositories.today.getSnapshot(parsed.data.date);
+  const snapshot = await repositories.today.getSnapshot(parsed.data.date);
   return NextResponse.json(todaySnapshotSchema.parse(snapshot));
 }

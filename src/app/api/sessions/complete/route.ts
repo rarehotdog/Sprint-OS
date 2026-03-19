@@ -4,7 +4,7 @@ import { completeSessionSchema, sessionDetailResponseSchema } from "@/lib/contra
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = completeSessionSchema.safeParse(body);
 
@@ -19,9 +19,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const session = repositories.solve.completeSession(parsed.data);
-    const runState = repositories.solve.getSessionRunState(session.id);
-    const solveContext = repositories.solve.getSessionSolveContext(session.id);
+    const session = await repositories.solve.completeSession(parsed.data);
+    const runState = await repositories.solve.getSessionRunState(session.id);
+    const solveContext = await repositories.solve.getSessionSolveContext(session.id);
     if (!runState || !solveContext) {
       return NextResponse.json({ error: "Session state unavailable" }, { status: 500 });
     }

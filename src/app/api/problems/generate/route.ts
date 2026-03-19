@@ -5,10 +5,11 @@ import {
   generateAiProblemSchema,
 } from "@/lib/contracts/problem-contracts";
 import { generateProblemDrafts } from "@/lib/server/ai-problem-generator";
-import { createProblem, getProblemReviewStatus } from "@/lib/server/problems-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 import { parseSectionHybrid } from "@/lib/server/section-parser";
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = generateAiProblemSchema.safeParse(body);
   if (!parsed.success) {
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
       ]),
     );
 
-    const problem = createProblem({
+    const problem = await repositories.problems.create({
       section: parser.section,
       sub_type: parser.sub_type,
       difficulty: parsed.data.difficulty,
@@ -56,12 +57,17 @@ export async function POST(request: Request) {
       },
       tags,
       source: "ai_generated",
+      source_type: "generated",
+      source_name: context.provider === "openai" ? "OpenAI" : "Mock Generator",
+      parser_confidence: parser.confidence,
+      curation_status: "needs_review",
+      corpus_tier: "filler",
     });
 
     items.push({
       problem,
       parser,
-      review_status: getProblemReviewStatus(problem),
+      review_status: await repositories.problems.getReviewStatus(problem),
       generation_mode: generationMode,
       generation_meta: {
         provider: context.provider,

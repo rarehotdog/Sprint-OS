@@ -6,6 +6,8 @@ import type {
   Section,
   TodayBookletCandidate,
   TodayNextAction,
+  TodayQueueCounts,
+  TodayQueueItem,
   TodaySnapshot,
 } from "@/lib/types";
 
@@ -17,9 +19,14 @@ import type {
   PostTodayStartInput,
 } from "@/lib/contracts/today-contracts";
 
-import { listSummaryCards } from "@/lib/server/knowledge-stack-store";
-import { listReports, listRules } from "@/lib/server/report-store";
+import {
+  listBookletEligibleRules,
+  listCuratedKnowledgeReports,
+  listSummaryCards,
+} from "@/lib/server/knowledge-stack-store";
+import { listProblemsByIds, listSolveReadyProblems } from "@/lib/server/problems-store";
 import { listQueueItems } from "@/lib/server/review-queue-store";
+import { getSessionById, getSessionRunState } from "@/lib/server/solve-store";
 import { getWeaknessAnalytics } from "@/lib/server/weakness-analytics";
 
 interface TodayDb {
@@ -71,11 +78,18 @@ function getDueReviewItems(dateYmd: string): Array<{
   next_review_at: string;
   priority_score: number;
 }> {
+  const startOfDay = new Date(`${dateYmd}T00:00:00.000Z`).getTime();
   const endOfDay = new Date(`${dateYmd}T23:59:59.999Z`).getTime();
   return listQueueItems()
     .filter((item) => {
       const time = new Date(item.next_review_at).getTime();
-      return Number.isFinite(time) && time <= endOfDay;
+      const createdAt = new Date(item.created_at).getTime();
+      return (
+        Number.isFinite(time) &&
+        Number.isFinite(createdAt) &&
+        time <= endOfDay &&
+        createdAt < startOfDay
+      );
     })
     .slice(0, 10)
     .map((item) => ({
@@ -88,6 +102,280 @@ function getDueReviewItems(dateYmd: string): Array<{
 
 function getWeakSubtypes() {
   return getWeaknessAnalytics({ days: 14 }).subtype_weakness;
+}
+
+function getDailyQueueTargets(availableMinutes: number): {
+  due_review: number;
+  new_problems: number;
+} {
+  if (availableMinutes <= 60) {
+    return { due_review: 2, new_problems: 5 };
+  }
+
+  if (availableMinutes <= 120) {
+    return { due_review: 3, new_problems: 8 };
+  }
+
+  return { due_review: 5, new_problems: 12 };
+}
+
+function buildQueueCounts(input: {
+  dueReview: number;
+  newProblems: number;
+  completed: number;
+  targetDueReview: number;
+  targetNewProblems: number;
+  shortage: boolean;
+}): TodayQueueCounts {
+  return {
+    due_review: input.dueReview,
+    new_problems: input.newProblems,
+    completed: input.completed,
+    total: input.dueReview + input.newProblems + input.completed,
+    target_due_review: input.targetDueReview,
+    target_new_problems: input.targetNewProblems,
+    estimated_minutes: input.dueReview * 3 + input.newProblems * 8,
+    shortage: input.shortage,
+  };
+}
+
+function getQueueTitle(section: Section, subType: string): string {
+  return `${section.toUpperCase()} / ${subType}`;
+}
+
+function buildQueueItem(input: {
+  problem_id: string;
+  review_queue_id: string | null;
+  section: Section;
+  sub_type: string;
+  source: TodayQueueItem["source"];
+  status: TodayQueueItem["status"];
+  due_at?: string | null;
+}): TodayQueueItem {
+  return {
+    id: input.problem_id,
+    problem_id: input.problem_id,
+    review_queue_id: input.review_queue_id,
+    section: input.section,
+    sub_type: input.sub_type,
+    source: input.source,
+    status: input.status,
+    title: getQueueTitle(input.section, input.sub_type),
+    due_at: input.due_at ?? null,
+  };
+}
+
+function getFocusSection(plan: DailyPlan | null): Section | null {
+  const planned = plan?.blocks.find((block) => block.block_type === "main_block")?.section_hint;
+  if (planned) {
+    return planned;
+  }
+
+  return getWeakSubtypes()[0]?.section ?? null;
+}
+
+function prioritizeNewProblems(
+  problems: ReturnType<typeof listSolveReadyProblems>,
+  preferredSections: Section[],
+): ReturnType<typeof listSolveReadyProblems> {
+  const sectionRank = new Map(preferredSections.map((section, index) => [section, index]));
+
+  return [...problems].sort((left, right) => {
+    const leftRank = sectionRank.get(left.section) ?? preferredSections.length;
+    const rightRank = sectionRank.get(right.section) ?? preferredSections.length;
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    return right.created_at.localeCompare(left.created_at);
+  });
+}
+
+function getLatestLinkedSessionId(plan: DailyPlan | null): string | null {
+  if (!plan) {
+    return null;
+  }
+
+  return [...plan.blocks].reverse().find((block) => block.linked_session_id)?.linked_session_id ?? null;
+}
+
+function readTodayQueueMeta(sessionMeta: Record<string, unknown>): Array<{
+  problem_id: string;
+  source: TodayQueueItem["source"];
+  review_queue_id: string | null;
+  due_at: string | null;
+}> {
+  const raw = sessionMeta.today_queue;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const source = record.source === "due_review" || record.source === "new" ? record.source : null;
+      const problemId = typeof record.problem_id === "string" ? record.problem_id : null;
+      if (!source || !problemId) {
+        return null;
+      }
+
+      return {
+        problem_id: problemId,
+        source,
+        review_queue_id: typeof record.review_queue_id === "string" ? record.review_queue_id : null,
+        due_at: typeof record.due_at === "string" ? record.due_at : null,
+      };
+    })
+    .filter((item): item is {
+      problem_id: string;
+      source: TodayQueueItem["source"];
+      review_queue_id: string | null;
+      due_at: string | null;
+    } => item !== null);
+}
+
+function buildPreviewQueue(dateYmd: string, checkin: DailyCheckin | null, plan: DailyPlan | null): {
+  resume_session_id: string | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: string | null;
+  queue_counts: TodayQueueCounts;
+} {
+  const targets = getDailyQueueTargets(checkin?.available_minutes ?? 90);
+  const preferredSections = [
+    getFocusSection(plan),
+    ...getWeakSubtypes().map((item) => item.section),
+  ].filter((section, index, all): section is Section => section !== null && all.indexOf(section) === index);
+  const dueReview = getDueReviewItems(dateYmd).slice(0, targets.due_review);
+  const dueProblems = listProblemsByIds(dueReview.map((item) => item.problem_id));
+  const dueByProblemId = new Map(dueReview.map((item) => [item.problem_id, item]));
+  const dueQueue = dueProblems.map((problem, index) =>
+    buildQueueItem({
+      problem_id: problem.id,
+      review_queue_id: dueByProblemId.get(problem.id)?.review_queue_id ?? null,
+      section: problem.section,
+      sub_type: problem.sub_type,
+      source: "due_review",
+      status: index === 0 ? "current" : "pending",
+      due_at: dueByProblemId.get(problem.id)?.next_review_at ?? null,
+    }),
+  );
+  const excludedProblemIds = new Set(dueQueue.map((item) => item.problem_id));
+  const newProblems = prioritizeNewProblems(listSolveReadyProblems(), preferredSections)
+    .filter((problem) => !excludedProblemIds.has(problem.id))
+    .slice(0, targets.new_problems);
+  const newQueue = newProblems.map((problem, index) =>
+    buildQueueItem({
+      problem_id: problem.id,
+      review_queue_id: null,
+      section: problem.section,
+      sub_type: problem.sub_type,
+      source: "new",
+      status: dueQueue.length === 0 && index === 0 ? "current" : "pending",
+    }),
+  );
+  const todayQueue = [...dueQueue, ...newQueue];
+
+  return {
+    resume_session_id: null,
+    today_queue: todayQueue,
+    focus_problem_id: todayQueue.find((item) => item.status === "current")?.problem_id ?? null,
+    queue_counts: buildQueueCounts({
+      dueReview: dueQueue.length,
+      newProblems: newQueue.length,
+      completed: 0,
+      targetDueReview: targets.due_review,
+      targetNewProblems: targets.new_problems,
+      shortage: newQueue.length < targets.new_problems,
+    }),
+  };
+}
+
+function buildSessionBackedQueue(dateYmd: string, checkin: DailyCheckin | null, plan: DailyPlan | null): {
+  resume_session_id: string | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: string | null;
+  queue_counts: TodayQueueCounts;
+} | null {
+  const sessionId = getLatestLinkedSessionId(plan);
+  if (!sessionId) {
+    return null;
+  }
+
+  const session = getSessionById(sessionId);
+  const runState = getSessionRunState(sessionId);
+  if (!session || !runState || runState.ordered_problem_ids.length === 0) {
+    return null;
+  }
+
+  const targets = getDailyQueueTargets(checkin?.available_minutes ?? session.duration_planned_min ?? 90);
+  const problemById = new Map(
+    listProblemsByIds(runState.ordered_problem_ids).map((problem) => [problem.id, problem]),
+  );
+  const queueMetaByProblemId = new Map(
+    readTodayQueueMeta(session.meta as Record<string, unknown>).map((item) => [item.problem_id, item]),
+  );
+  const attempted = new Set(runState.attempted_problem_ids);
+  const focusProblemId = runState.completed
+    ? null
+    : runState.next_problem_id ?? runState.ordered_problem_ids[runState.current_index] ?? null;
+  const ordered = runState.ordered_problem_ids
+    .map((problemId) => {
+      const problem = problemById.get(problemId);
+      if (!problem) {
+        return null;
+      }
+
+      const meta = queueMetaByProblemId.get(problemId);
+      return buildQueueItem({
+        problem_id: problem.id,
+        review_queue_id: meta?.review_queue_id ?? null,
+        section: problem.section,
+        sub_type: problem.sub_type,
+        source: meta?.source ?? "new",
+        status: attempted.has(problemId)
+          ? "completed"
+          : focusProblemId === problemId
+            ? "current"
+            : "pending",
+        due_at: meta?.due_at ?? null,
+      });
+    })
+    .filter((item): item is TodayQueueItem => item !== null);
+
+  const pending = ordered.filter((item) => item.status !== "completed");
+  const completed = ordered.filter((item) => item.status === "completed");
+  const queue = [...pending, ...completed];
+  const pendingDue = pending.filter((item) => item.source === "due_review").length;
+  const pendingNew = pending.filter((item) => item.source === "new").length;
+  const totalNew = queue.filter((item) => item.source === "new").length;
+
+  return {
+    resume_session_id: runState.completed ? null : session.id,
+    today_queue: queue,
+    focus_problem_id: focusProblemId,
+    queue_counts: buildQueueCounts({
+      dueReview: pendingDue,
+      newProblems: pendingNew,
+      completed: completed.length,
+      targetDueReview: targets.due_review,
+      targetNewProblems: targets.new_problems,
+      shortage: totalNew < targets.new_problems,
+    }),
+  };
+}
+
+function buildTodayQueue(dateYmd: string, checkin: DailyCheckin | null, plan: DailyPlan | null): {
+  resume_session_id: string | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: string | null;
+  queue_counts: TodayQueueCounts;
+} {
+  return buildSessionBackedQueue(dateYmd, checkin, plan) ?? buildPreviewQueue(dateYmd, checkin, plan);
 }
 
 function computeTodayProgress(plan: DailyPlan | null): TodaySnapshot["progress"] {
@@ -176,8 +464,7 @@ function buildBookletCandidates(): TodayBookletCandidate[] {
     source_rule_id: card.source_rule_id,
   }));
 
-  const reportCandidates = listReports()
-    .filter((report) => report.report_mode === "deep")
+  const reportCandidates = listCuratedKnowledgeReports()
     .slice(0, 5)
     .flatMap((report) => {
       const out: TodayBookletCandidate[] = [];
@@ -203,7 +490,7 @@ function buildBookletCandidates(): TodayBookletCandidate[] {
       return out;
     });
 
-  const ruleCandidates = listRules()
+  const ruleCandidates = listBookletEligibleRules()
     .slice(0, 5)
     .map((rule) => ({
       kind: "tip" as const,
@@ -571,6 +858,8 @@ export function getTodaySnapshot(date?: string): TodaySnapshot {
     plan = generateDailyPlan({ date: dateYmd, force_regenerate: false }).plan;
   }
 
+  const queue = buildTodayQueue(dateYmd, checkin, plan);
+
   return {
     checkin,
     yesterday_weakness: yesterdayWeakness,
@@ -579,6 +868,10 @@ export function getTodaySnapshot(date?: string): TodaySnapshot {
     progress: computeTodayProgress(plan),
     booklet_candidates: buildBookletCandidates(),
     next_action: resolveNextAction(plan),
+    resume_session_id: queue.resume_session_id,
+    today_queue: queue.today_queue,
+    focus_problem_id: queue.focus_problem_id,
+    queue_counts: queue.queue_counts,
   };
 }
 
@@ -588,6 +881,10 @@ export function startTodayLoop(input: PostTodayStartInput): {
   progress: TodaySnapshot["progress"];
   next_action: TodayNextAction;
   redirect_to: string;
+  resume_session_id: string | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: string | null;
+  queue_counts: TodayQueueCounts;
 } {
   const checkin = upsertDailyCheckin({
     date: input.date,
@@ -611,6 +908,7 @@ export function startTodayLoop(input: PostTodayStartInput): {
   const nextAction = allCompleted
     ? { type: "booklet" as const, label: "오늘 블록 완료 - 요약집 확인", href: "/summary" }
     : built.next_action;
+  const snapshot = getTodaySnapshot(input.date);
 
   return {
     checkin,
@@ -618,6 +916,10 @@ export function startTodayLoop(input: PostTodayStartInput): {
     progress,
     next_action: nextAction,
     redirect_to: nextAction.href,
+    resume_session_id: snapshot.resume_session_id,
+    today_queue: snapshot.today_queue,
+    focus_problem_id: snapshot.focus_problem_id,
+    queue_counts: snapshot.queue_counts,
   };
 }
 

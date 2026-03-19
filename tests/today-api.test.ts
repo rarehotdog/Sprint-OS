@@ -6,6 +6,7 @@ import { POST as postTodayPlan } from "../src/app/api/today/plan/route";
 import { POST as postTodayProgress } from "../src/app/api/today/progress/route";
 import { POST as postTodayReplan } from "../src/app/api/today/replan/route";
 import { POST as postTodayStart } from "../src/app/api/today/start/route";
+import { createProblem, resetProblemsStoreForTests } from "../src/lib/server/problems-store";
 import { resetReportStoreForTests } from "../src/lib/server/report-store";
 import { resetQueueStoreForTests } from "../src/lib/server/review-queue-store";
 import { resetSolveStoreForTests } from "../src/lib/server/solve-store";
@@ -24,7 +25,25 @@ beforeEach(() => {
   resetReportStoreForTests();
   resetQueueStoreForTests();
   resetSolveStoreForTests();
+  resetProblemsStoreForTests();
 });
+
+function seedSolveReadyProblems(section: "verbal" | "quant" | "di", count: number) {
+  for (let index = 0; index < count; index += 1) {
+    createProblem({
+      section,
+      sub_type: `${section}_type_${index + 1}`,
+      difficulty: "medium",
+      content: {
+        stem: `${section} stem ${index + 1}`,
+        choices: ["A", "B", "C", "D"],
+        answer_index: 1,
+      },
+      tags: [],
+      source: "manual_capture",
+    });
+  }
+}
 
 describe("today api", () => {
   it("rejects invalid today checkin payload", async () => {
@@ -278,6 +297,7 @@ describe("today api", () => {
 
   it("starts loop with checkin/plan and returns redirect", async () => {
     const date = "2026-03-08";
+    seedSolveReadyProblems("verbal", 8);
 
     const started = await postTodayStart(
       postRequest("http://localhost/api/today/start", {
@@ -299,11 +319,17 @@ describe("today api", () => {
       plan: { id: string; blocks: Array<{ status: string }> };
       next_action: { href: string; type: string };
       redirect_to: string;
+      resume_session_id: string | null;
+      today_queue: Array<{ source: string; status: string }>;
+      queue_counts: { due_review: number; new_problems: number; total: number };
     };
     expect(payload.checkin.date).toBe(date);
     expect(payload.plan.blocks.length).toBeGreaterThan(0);
-    expect(payload.redirect_to).toBe(payload.next_action.href);
+    expect(payload.redirect_to).toMatch(/^\/solve\/[0-9a-fA-F-]{36}/);
     expect(payload.next_action.type).toBeTruthy();
+    expect(payload.resume_session_id).toBeTruthy();
+    expect(payload.today_queue.length).toBeGreaterThan(0);
+    expect(payload.queue_counts.total).toBe(payload.today_queue.length);
 
     const startedAgain = await postTodayStart(
       postRequest("http://localhost/api/today/start", {
@@ -326,7 +352,7 @@ describe("today api", () => {
     };
     expect(secondPayload.checkin.id).toBe(payload.checkin.id);
     expect(secondPayload.plan.id).toBe(payload.plan.id);
-    expect(secondPayload.redirect_to.startsWith("/")).toBe(true);
+    expect(secondPayload.redirect_to).toMatch(/^\/solve\/[0-9a-fA-F-]{36}/);
   });
 
   it("forces /summary redirect when all blocks already completed", async () => {
@@ -383,7 +409,7 @@ describe("today api", () => {
     expect(payload.redirect_to).toBe("/summary");
   });
 
-  it("auto-creates a solve session when current block is main_block", async () => {
+  it("routes to problems workbench when curated queue is empty", async () => {
     const date = "2026-03-08";
 
     const started = await postTodayStart(
@@ -401,24 +427,18 @@ describe("today api", () => {
     );
     expect(started.status).toBe(200);
     const startedPayload = (await started.json()) as {
-      plan: { blocks: Array<{ id: string; block_type: string }> };
+      plan: { blocks: Array<{ block_type: string }> };
       redirect_to: string;
     };
-    expect(startedPayload.redirect_to).toBe("/review/reports");
+    expect(startedPayload.redirect_to).toBe("/problems?section=verbal");
+    expect(startedPayload.plan.blocks.some((block) => block.block_type === "main_block")).toBe(true);
+  });
 
-    const warmup = startedPayload.plan.blocks.find((block) => block.block_type === "warmup_review");
-    expect(warmup).toBeTruthy();
+  it("creates or resumes a solve session from the today queue", async () => {
+    const date = "2026-03-08";
+    seedSolveReadyProblems("verbal", 8);
 
-    const progressed = await postTodayProgress(
-      postRequest("http://localhost/api/today/progress", {
-        date,
-        block_id: warmup?.id,
-        status: "completed",
-      }),
-    );
-    expect(progressed.status).toBe(200);
-
-    const startedAgain = await postTodayStart(
+    const started = await postTodayStart(
       postRequest("http://localhost/api/today/start", {
         date,
         checkin: {
@@ -431,16 +451,18 @@ describe("today api", () => {
         },
       }),
     );
-    expect(startedAgain.status).toBe(200);
-    const payload = (await startedAgain.json()) as {
+    expect(started.status).toBe(200);
+    const payload = (await started.json()) as {
       plan: { blocks: Array<{ block_type: string; linked_session_id: string | null }> };
-      next_action: { type: string };
+      resume_session_id: string | null;
       redirect_to: string;
+      today_queue: Array<{ source: string; status: string }>;
     };
 
-    expect(payload.next_action.type).toBe("solve");
-    expect(payload.redirect_to).toMatch(/^\/solve\/[0-9a-fA-F-]{36}\?section=(verbal|quant|di)&duration=\d+$/);
+    expect(payload.resume_session_id).toBeTruthy();
+    expect(payload.redirect_to).toMatch(/^\/solve\/[0-9a-fA-F-]{36}/);
     const mainBlock = payload.plan.blocks.find((block) => block.block_type === "main_block");
     expect(mainBlock?.linked_session_id).toBeTruthy();
+    expect(payload.today_queue.every((item) => item.status !== "completed")).toBe(true);
   });
 });

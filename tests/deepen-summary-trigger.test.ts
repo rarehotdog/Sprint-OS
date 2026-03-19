@@ -8,23 +8,60 @@ import {
   listSummaryCards,
   resetKnowledgeStackStoreForTests,
 } from "../src/lib/server/knowledge-stack-store";
+import { createProblem, resetProblemsStoreForTests } from "../src/lib/server/problems-store";
 import { resetReportStoreForTests } from "../src/lib/server/report-store";
+import { createAttempt, createSession, resetSolveStoreForTests } from "../src/lib/server/solve-store";
 import { resetSummaryBookletStoreForTests } from "../src/lib/server/summary-booklet-store";
 
 beforeEach(() => {
+  resetProblemsStoreForTests();
+  resetSolveStoreForTests();
   resetReportStoreForTests();
   resetSummaryBookletStoreForTests();
   resetKnowledgeStackStoreForTests();
 });
 
+function seedAttemptContext(): string {
+  const problem = createProblem({
+    section: "verbal",
+    sub_type: "cr_assumption",
+    difficulty: "medium",
+    content: {
+      stem: "Trigger booklet rebuild",
+      choices: ["A", "B", "C", "D", "E"],
+      answer_index: 1,
+    },
+    tags: [],
+    source: "manual_capture",
+  });
+  const session = createSession({
+    session_type: "sprint_verbal",
+    duration_planned_min: 45,
+    problem_ids: [problem.id],
+    meta: {},
+  });
+  const attempt = createAttempt({
+    problem_id: problem.id,
+    session_id: session.id,
+    user_answer: 0,
+    is_correct: false,
+    time_spent_sec: 83,
+    exceeded_cutoff: false,
+    confidence: "unsure",
+    pre_think: null,
+  });
+  return attempt.id;
+}
+
 describe("deepen -> summary trigger", () => {
   it("auto-refreshes booklet after deepen", async () => {
+    const attemptId = seedAttemptContext();
     const created = await createReport(
       new Request("http://localhost/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          attempt_id: crypto.randomUUID(),
+          attempt_id: attemptId,
           my_frame: "frame",
           correct_mechanism: "mechanism",
           next_tool: "tool",

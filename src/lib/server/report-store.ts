@@ -1,6 +1,6 @@
 import type { AnalyzeReportOutput, CreateQuickReportInput, DeepenReportInput } from "@/lib/contracts/report-contracts";
 import type { ErrorReport, Rule } from "@/lib/types";
-import { resetQueueStoreForTests, seedQueueItem } from "@/lib/server/review-queue-store";
+import { listQueueItems, resetQueueStoreForTests, seedQueueItem } from "@/lib/server/review-queue-store";
 import { getAttemptById } from "@/lib/server/solve-store";
 
 interface MemoryDb {
@@ -91,7 +91,10 @@ export function createQuickReport(input: CreateQuickReportInput): {
   createdRule: Rule | null;
 } {
   const timestamp = now();
-  const reviewQueueId = crypto.randomUUID();
+  const sourceAttempt = getAttemptById(input.attempt_id);
+  const existingQueue =
+    sourceAttempt ? listQueueItems().find((item) => item.problem_id === sourceAttempt.problem_id) : null;
+  const reviewQueueId = existingQueue?.id ?? crypto.randomUUID();
   const report: ErrorReport = {
     id: crypto.randomUUID(),
     attempt_id: input.attempt_id,
@@ -115,17 +118,18 @@ export function createQuickReport(input: CreateQuickReportInput): {
 
   const db = getMemoryDb();
   db.reports.set(report.id, report);
-  const sourceAttempt = getAttemptById(input.attempt_id);
-  seedQueueItem({
-    id: reviewQueueId,
-    problem_id: sourceAttempt?.problem_id ?? crypto.randomUUID(),
-    next_review_at: timestamp,
-    interval_days: 1,
-    ease_factor: 2.5,
-    repetitions: 0,
-    priority_score: 1,
-    created_at: timestamp,
-  });
+  if (!existingQueue) {
+    seedQueueItem({
+      id: reviewQueueId,
+      problem_id: sourceAttempt?.problem_id ?? crypto.randomUUID(),
+      next_review_at: timestamp,
+      interval_days: 1,
+      ease_factor: 2.5,
+      repetitions: 0,
+      priority_score: 1,
+      created_at: timestamp,
+    });
+  }
 
   if (!input.save_as_rule) {
     return { report, createdRule: null };
@@ -191,6 +195,16 @@ export function attachAiAnalysis(
 
   db.reports.set(reportId, updated);
   return updated;
+}
+
+export function seedReportStore(input: {
+  reports: ErrorReport[];
+  rules: Rule[];
+}): void {
+  global.__gmatMemoryDb__ = {
+    reports: new Map(input.reports.map((report) => [report.id, report])),
+    rules: [...input.rules],
+  };
 }
 
 export function resetReportStoreForTests(): void {

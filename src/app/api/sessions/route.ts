@@ -29,15 +29,15 @@ function pickSectionForSession(sessionType: SessionType, meta: Record<string, un
   return "verbal";
 }
 
-function autoSelectProblemIds(
+async function autoSelectProblemIds(
   sessionType: SessionType,
   meta: Record<string, unknown>,
-  listProblems: (section?: Section) => Array<{ id: string }>,
-): {
+  listProblems: (section?: Section) => Promise<Array<{ id: string }>>,
+): Promise<{
   problemIds: string[];
   sectionOrder: Section[];
   sectionBounds: Array<{ section: Section; start_index: number; end_index: number }>;
-} {
+}> {
   if (sessionType === "mock_full") {
     const sectionOrder: Section[] = ["verbal", "quant", "di"];
     const problemIds: string[] = [];
@@ -45,7 +45,7 @@ function autoSelectProblemIds(
     let cursor = 0;
 
     for (const section of sectionOrder) {
-      const ids = listProblems(section)
+      const ids = (await listProblems(section))
         .map((problem) => problem.id)
         .slice(0, SECTION_COUNTS[section]);
       problemIds.push(...ids);
@@ -61,7 +61,7 @@ function autoSelectProblemIds(
   }
 
   const section = pickSectionForSession(sessionType, meta);
-  const ids = listProblems(section)
+  const ids = (await listProblems(section))
     .map((problem) => problem.id)
     .slice(0, SECTION_COUNTS[section]);
 
@@ -73,21 +73,21 @@ function autoSelectProblemIds(
 }
 
 export async function GET(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("session_id");
 
   if (!sessionId) {
-    return NextResponse.json({ sessions: repositories.solve.listSessions() });
+    return NextResponse.json({ sessions: await repositories.solve.listSessions() });
   }
 
   if (!/^[0-9a-fA-F-]{36}$/.test(sessionId)) {
     return NextResponse.json({ error: "Invalid session_id" }, { status: 400 });
   }
 
-  const session = repositories.solve.getSessionById(sessionId);
-  const runState = repositories.solve.getSessionRunState(sessionId);
-  const solveContext = repositories.solve.getSessionSolveContext(sessionId);
+  const session = await repositories.solve.getSessionById(sessionId);
+  const runState = await repositories.solve.getSessionRunState(sessionId);
+  const solveContext = await repositories.solve.getSessionSolveContext(sessionId);
   if (!session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = createSessionSchema.safeParse(body);
 
@@ -121,10 +121,10 @@ export async function POST(request: Request) {
   let problemIds = parsed.data.problem_ids ?? [];
 
   if (problemIds.length === 0) {
-    const auto = autoSelectProblemIds(
+    const auto = await autoSelectProblemIds(
       parsed.data.session_type,
       meta,
-      repositories.problems.list,
+      repositories.problems.listSolveReady,
     );
     problemIds = auto.problemIds;
     meta.auto_problem_selection = true;
@@ -132,13 +132,13 @@ export async function POST(request: Request) {
     meta.section_bounds = auto.sectionBounds;
   }
 
-  const session = repositories.solve.createSession({
+  const session = await repositories.solve.createSession({
     ...parsed.data,
     problem_ids: problemIds,
     meta,
   });
-  const runState = repositories.solve.getSessionRunState(session.id);
-  const solveContext = repositories.solve.getSessionSolveContext(session.id);
+  const runState = await repositories.solve.getSessionRunState(session.id);
+  const solveContext = await repositories.solve.getSessionSolveContext(session.id);
 
   if (!runState || !solveContext) {
     return NextResponse.json({ error: "Session state unavailable" }, { status: 500 });

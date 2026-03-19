@@ -50,14 +50,22 @@ describe("problems import api", () => {
         section: string;
         sub_type: string;
         source: string | null;
+        source_type: string | null;
+        curation_status: string | null;
+        corpus_tier: string | null;
         tags: string[];
         content: Record<string, unknown>;
       };
+      review_status: string;
     };
 
     expect(payload.problem.section).toBe("verbal");
     expect(payload.problem.sub_type).toBe("cr_inference");
     expect(payload.problem.source).toBe("manual_capture");
+    expect(payload.problem.source_type).toBe("manual");
+    expect(payload.problem.curation_status).toBe("accepted");
+    expect(payload.problem.corpus_tier).toBe("gold");
+    expect(payload.review_status).toBe("accepted");
     expect(payload.problem.tags).toContain("uploaded");
     expect(payload.problem.tags).toContain("cr_inference");
 

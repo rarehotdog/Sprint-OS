@@ -62,13 +62,13 @@ describe("problems review-status api", () => {
     expect(revised.status).toBe(200);
     const revisedPayload = (await revised.json()) as {
       review_status: string;
-      problem: { section: string; sub_type: string; tags: string[] };
+      problem: { section: string; sub_type: string; tags: string[]; curation_status: string | null };
     };
-    expect(revisedPayload.review_status).toBe("accepted");
+    expect(revisedPayload.review_status).toBe("needs_review");
+    expect(revisedPayload.problem.curation_status).toBe("needs_review");
     expect(revisedPayload.problem.section).toBe("verbal");
     expect(revisedPayload.problem.sub_type).toBe("cr_inference");
     expect(revisedPayload.problem.tags).toContain("curated");
-    expect(revisedPayload.problem.tags).not.toContain("needs_review");
 
     const accepted = await POST(
       buildRequest({
@@ -79,10 +79,10 @@ describe("problems review-status api", () => {
     expect(accepted.status).toBe(200);
     const acceptedPayload = (await accepted.json()) as {
       review_status: string;
-      problem: { tags: string[] };
+      problem: { curation_status: string | null };
     };
     expect(acceptedPayload.review_status).toBe("accepted");
-    expect(acceptedPayload.problem.tags).toContain("accepted");
+    expect(acceptedPayload.problem.curation_status).toBe("accepted");
   });
 
   it("lists and filters review queue items", async () => {
@@ -112,6 +112,9 @@ describe("problems review-status api", () => {
       },
       tags: ["accepted", "ai_generated"],
       source: "ai_generated",
+      source_type: "generated",
+      curation_status: "accepted",
+      corpus_tier: "filler",
     });
 
     const p2 = createProblem({
@@ -124,6 +127,9 @@ describe("problems review-status api", () => {
       },
       tags: ["needs_review", "manual_capture", "on_hold"],
       source: "manual_capture",
+      source_type: "manual",
+      curation_status: "needs_review",
+      corpus_tier: "gold",
     });
 
     const listAll = await GET(

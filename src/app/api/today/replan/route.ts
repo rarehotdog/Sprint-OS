@@ -7,7 +7,7 @@ import {
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = postTodayReplanSchema.safeParse(body);
 
@@ -21,6 +21,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const replanned = repositories.today.replan(parsed.data);
+  const replanned = await repositories.today.replan(parsed.data);
   return NextResponse.json(postTodayReplanResponseSchema.parse(replanned));
 }

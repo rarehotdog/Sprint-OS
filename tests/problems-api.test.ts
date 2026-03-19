@@ -109,5 +109,74 @@ describe("problems api", () => {
 
     expect(response.status).toBe(400);
   });
-});
 
+  it("lists only solve-ready curated gold and scale problems", async () => {
+    const acceptedGold = await postProblem(
+      new Request("http://localhost/api/problems", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          section: "verbal",
+          sub_type: "cr_assumption",
+          difficulty: "medium",
+          content: { stem: "gold", choices: ["A", "B"], answer_index: 0 },
+          source: "manual_capture",
+          source_type: "manual",
+          curation_status: "accepted",
+          corpus_tier: "gold",
+        }),
+      }),
+    );
+
+    await postProblem(
+      new Request("http://localhost/api/problems", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          section: "verbal",
+          sub_type: "cr_weaken",
+          difficulty: "medium",
+          content: { stem: "filler", choices: ["A", "B"], answer_index: 0 },
+          source: "ai_generated",
+          source_type: "generated",
+          curation_status: "needs_review",
+          corpus_tier: "filler",
+        }),
+      }),
+    );
+
+    const acceptedScale = await postProblem(
+      new Request("http://localhost/api/problems", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          section: "verbal",
+          sub_type: "cr_inference",
+          difficulty: "hard",
+          content: { stem: "scale", choices: ["A", "B"], answer_index: 1 },
+          source: "external_import",
+          source_type: "external",
+          curation_status: "accepted",
+          corpus_tier: "scale",
+        }),
+      }),
+    );
+
+    const goldPayload = (await acceptedGold.json()) as { problem: { id: string } };
+    const scalePayload = (await acceptedScale.json()) as { problem: { id: string } };
+
+    const response = await getProblems(
+      new Request("http://localhost/api/problems?section=verbal&solve_ready=true"),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      problems: Array<{ id: string }>;
+    };
+
+    expect(payload.problems.map((problem) => problem.id)).toEqual([
+      scalePayload.problem.id,
+      goldPayload.problem.id,
+    ]);
+  });
+});

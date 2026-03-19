@@ -13,9 +13,14 @@ import type {
 } from "@/lib/contracts/summary-contracts";
 
 import { getWeaknessAnalytics } from "@/lib/server/weakness-analytics";
-import { listAnswerFlows, listSummaryCards } from "@/lib/server/knowledge-stack-store";
+import {
+  listAnswerFlows,
+  listBookletEligibleRules,
+  listCuratedKnowledgeReports,
+  listSummaryCards,
+} from "@/lib/server/knowledge-stack-store";
 import { listQueueItems } from "@/lib/server/review-queue-store";
-import { listReports, listRules } from "@/lib/server/report-store";
+import { listReports } from "@/lib/server/report-store";
 
 interface SummaryDb {
   byVersion: Map<SummaryVersion, SummaryBooklet>;
@@ -71,7 +76,7 @@ function getVersions(version: "today" | "eve" | "day" | "both" | "all"): Summary
 
 function computeSourceCounts(): SourceCounts {
   const reports = listReports();
-  const rules = listRules();
+  const rules = listBookletEligibleRules();
   const now = Date.now();
   const dueReviews = listQueueItems().filter((item) => {
     const parsed = new Date(item.next_review_at).getTime();
@@ -128,7 +133,7 @@ function buildConcepts(version: SummaryVersion): string[] {
     return dedupeNonEmpty(cardConcepts).slice(0, 4);
   }
 
-  const reports = listReports();
+  const reports = listCuratedKnowledgeReports();
   const fromReports = dedupeNonEmpty(
     reports
       .filter((report) => report.report_mode === "deep")
@@ -198,7 +203,7 @@ function buildProcessFlows(version: SummaryVersion): string[] {
     return dedupeNonEmpty(cardFlows).slice(0, 3);
   }
 
-  const reports = listReports();
+  const reports = listCuratedKnowledgeReports();
   const flows = dedupeNonEmpty(
     reports.map(
       (report) =>
@@ -248,7 +253,7 @@ function buildTips(version: SummaryVersion): string[] {
     return dedupeNonEmpty(cardTips).slice(0, 5);
   }
 
-  const rules = listRules();
+  const rules = listBookletEligibleRules();
   const diagnostics = computeDiagnostics();
   const ruleTips = dedupeNonEmpty(rules.map((rule) => rule.content));
   const errorTips = diagnostics.errorPatterns.map(

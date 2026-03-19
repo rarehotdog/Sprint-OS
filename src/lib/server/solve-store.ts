@@ -8,6 +8,7 @@ import type { Attempt, Section, Session, SessionSectionBound, SessionSolveContex
 interface SolveDb {
   sessions: Map<string, Session>;
   attempts: Map<string, Attempt>;
+  sessionProblems: Map<string, string[]>;
 }
 
 declare global {
@@ -20,6 +21,7 @@ function getSolveDb(): SolveDb {
     global.__gmatSolveDb__ = {
       sessions: new Map<string, Session>(),
       attempts: new Map<string, Attempt>(),
+      sessionProblems: new Map<string, string[]>(),
     };
   }
 
@@ -53,6 +55,7 @@ export function createSession(input: CreateSessionInput): Session {
   };
 
   getSolveDb().sessions.set(session.id, session);
+  getSolveDb().sessionProblems.set(session.id, orderedProblemIds);
   return session;
 }
 
@@ -99,6 +102,11 @@ export function getAttemptById(attemptId: string): Attempt | null {
 }
 
 function readOrderedProblemIds(session: Session): string[] {
+  const relational = getSolveDb().sessionProblems.get(session.id);
+  if (relational) {
+    return [...relational];
+  }
+
   const raw = (session.meta as { ordered_problem_ids?: unknown }).ordered_problem_ids;
   if (!Array.isArray(raw)) {
     return [];
@@ -295,9 +303,24 @@ export function completeSession(input: CompleteSessionInput): Session {
   return updated;
 }
 
+export function seedSolveStore(input: {
+  sessions: Session[];
+  attempts: Attempt[];
+  sessionProblems?: Array<{ session_id: string; problem_ids: string[] }>;
+}): void {
+  global.__gmatSolveDb__ = {
+    sessions: new Map(input.sessions.map((session) => [session.id, session])),
+    attempts: new Map(input.attempts.map((attempt) => [attempt.id, attempt])),
+    sessionProblems: new Map(
+      (input.sessionProblems ?? []).map((item) => [item.session_id, [...item.problem_ids]]),
+    ),
+  };
+}
+
 export function resetSolveStoreForTests(): void {
   global.__gmatSolveDb__ = {
     sessions: new Map<string, Session>(),
     attempts: new Map<string, Attempt>(),
+    sessionProblems: new Map<string, string[]>(),
   };
 }

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { upsertTodayLog } from "@/lib/server/daily-log-store";
+import { ensureCanonicalStateLoaded } from "@/lib/server/persistence/repositories";
 import { listRules, listReports } from "@/lib/server/report-store";
 import { listAttempts } from "@/lib/server/solve-store";
 
 export async function GET() {
+  await ensureCanonicalStateLoaded();
   const attempts = listAttempts();
   const reports = listReports();
   const rules = listRules();

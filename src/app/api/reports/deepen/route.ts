@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { deepenReportSchema } from "@/lib/contracts/report-contracts";
 import { analyzeReportWithClaude } from "@/lib/server/ai";
 import { promoteDeepReportToKnowledgeStack } from "@/lib/server/knowledge-stack-store";
-import { attachAiAnalysis, deepenReport } from "@/lib/server/report-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 import { buildSummaryBooklet } from "@/lib/server/summary-booklet-store";
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = deepenReportSchema.safeParse(body);
 
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const deepened = deepenReport(parsed.data);
+    const deepened = await repositories.reports.deepenReport(parsed.data);
 
     if (!parsed.data.generate_ai) {
       try {
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
       sub_report: deepened.sub_report,
     });
 
-    const updated = attachAiAnalysis(deepened.id, aiAnalysis);
+    const updated = await repositories.reports.attachAiAnalysis(deepened.id, aiAnalysis);
 
     try {
       promoteDeepReportToKnowledgeStack(updated);

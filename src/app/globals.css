@@ -27,7 +27,16 @@
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.16), transparent 24rem),
+    radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 22rem),
+    linear-gradient(180deg, #0a0a0a 0%, #09090b 45%, #050816 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(244, 114, 182, 0.35);
+  color: white;
 }

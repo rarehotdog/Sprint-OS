@@ -4,9 +4,11 @@ import {
   summaryBookletSchema,
   summaryQuerySchema,
 } from "@/lib/contracts/summary-contracts";
+import { ensureCanonicalStateLoaded } from "@/lib/server/persistence/repositories";
 import { ensureSummaryBooklet } from "@/lib/server/summary-booklet-store";
 
 export async function GET(request: Request) {
+  await ensureCanonicalStateLoaded();
   const url = new URL(request.url);
   const parsed = summaryQuerySchema.safeParse({
     mode: url.searchParams.get("mode") ?? undefined,

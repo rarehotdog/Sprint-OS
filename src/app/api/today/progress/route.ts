@@ -7,7 +7,7 @@ import {
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = postTodayProgressSchema.safeParse(body);
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const updated = repositories.today.updateProgress(parsed.data);
+    const updated = await repositories.today.updateProgress(parsed.data);
     return NextResponse.json(postTodayProgressResponseSchema.parse(updated));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

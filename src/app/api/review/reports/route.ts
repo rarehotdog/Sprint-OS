@@ -7,7 +7,7 @@ import {
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
   const parsed = reviewReportsQuerySchema.safeParse({
     report_id: url.searchParams.get("report_id") ?? undefined,
@@ -26,7 +26,6 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(
-    reviewReportsResponseSchema.parse(repositories.review.getReportsView(parsed.data)),
+    reviewReportsResponseSchema.parse(await repositories.review.getReportsView(parsed.data)),
   );
 }
-

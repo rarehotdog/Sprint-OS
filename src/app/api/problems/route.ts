@@ -5,12 +5,14 @@ import {
   listProblemsResponseSchema,
   problemListQuerySchema,
 } from "@/lib/contracts/problem-contracts";
-import { createProblem, listProblems, listProblemsByIds } from "@/lib/server/problems-store";
+import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function GET(request: Request) {
+  const repositories = await getServerRepositories();
   const url = new URL(request.url);
   const parsed = problemListQuerySchema.safeParse({
     section: url.searchParams.get("section") ?? undefined,
+    solve_ready: url.searchParams.get("solve_ready") ?? undefined,
     problem_ids: url.searchParams.get("problem_ids") ?? undefined,
   });
 
@@ -23,13 +25,16 @@ export async function GET(request: Request) {
 
   const problems =
     parsed.data.problem_ids.length > 0
-      ? listProblemsByIds(parsed.data.problem_ids)
-      : listProblems(parsed.data.section);
+      ? await repositories.problems.listByIds(parsed.data.problem_ids)
+      : parsed.data.solve_ready
+        ? await repositories.problems.listSolveReady(parsed.data.section)
+        : await repositories.problems.list(parsed.data.section);
 
   return NextResponse.json(listProblemsResponseSchema.parse({ problems }));
 }
 
 export async function POST(request: Request) {
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = createProblemSchema.safeParse(body);
   if (!parsed.success) {
@@ -39,6 +44,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const problem = createProblem(parsed.data);
+  const problem = await repositories.problems.create(parsed.data);
   return NextResponse.json({ problem }, { status: 201 });
 }

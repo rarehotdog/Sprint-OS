@@ -4,9 +4,11 @@ import {
   summaryBuildRequestSchema,
   summaryBuildResponseSchema,
 } from "@/lib/contracts/summary-contracts";
+import { ensureCanonicalStateLoaded } from "@/lib/server/persistence/repositories";
 import { buildSummaryBooklet } from "@/lib/server/summary-booklet-store";
 
 export async function POST(request: Request) {
+  await ensureCanonicalStateLoaded();
   const body = await request.json().catch(() => null);
   const parsed = summaryBuildRequestSchema.safeParse(body);
 

@@ -27,6 +27,10 @@ export type ReportMode = "quick" | "deep";
 export type ParserMode = "rule" | "ai_correction";
 export type GenerationMode = "openai" | "mock";
 export type ReviewStatus = "accepted" | "needs_review";
+export type ProblemSourceType = "manual" | "external" | "generated";
+export type ProblemCurationStatus = "draft" | "needs_review" | "accepted" | "rejected";
+export type ProblemCorpusTier = "gold" | "scale" | "filler";
+export type ProblemImportInputType = "text" | "csv";
 
 export interface ProblemParseResult {
   section: Section;
@@ -53,6 +57,34 @@ export interface Problem {
   content: Record<string, unknown>;
   tags: string[];
   source: string | null;
+  source_type: ProblemSourceType | null;
+  source_name: string | null;
+  source_url: string | null;
+  external_id: string | null;
+  license_note: string | null;
+  parser_confidence: number | null;
+  curation_status: ProblemCurationStatus | null;
+  corpus_tier: ProblemCorpusTier | null;
+  canonical_hash: string | null;
+  difficulty_estimate: Difficulty | null;
+  explanation_quality: number | null;
+  import_batch_id: UUID | null;
+  last_curated_at: ISODateTime | null;
+  curated_by: string | null;
+  created_at: ISODateTime;
+}
+
+export interface ProblemImportBatch {
+  id: UUID;
+  input_type: ProblemImportInputType;
+  source_name: string | null;
+  source_url: string | null;
+  license_note: string | null;
+  notes: string | null;
+  total_rows: number;
+  created_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
   created_at: ISODateTime;
 }
 
@@ -371,6 +403,32 @@ export interface TodayBookletCandidate {
   source_rule_id: UUID | null;
 }
 
+export type TodayQueueItemSource = "due_review" | "new";
+export type TodayQueueItemStatus = "current" | "pending" | "completed";
+
+export interface TodayQueueItem {
+  id: UUID;
+  problem_id: UUID;
+  review_queue_id: UUID | null;
+  section: Section;
+  sub_type: string;
+  source: TodayQueueItemSource;
+  status: TodayQueueItemStatus;
+  title: string;
+  due_at: ISODateTime | null;
+}
+
+export interface TodayQueueCounts {
+  due_review: number;
+  new_problems: number;
+  completed: number;
+  total: number;
+  target_due_review: number;
+  target_new_problems: number;
+  estimated_minutes: number;
+  shortage: boolean;
+}
+
 export interface TodaySnapshot {
   checkin: DailyCheckin | null;
   yesterday_weakness: SummarySubType[];
@@ -384,6 +442,10 @@ export interface TodaySnapshot {
   progress: TodayProgress;
   booklet_candidates: TodayBookletCandidate[];
   next_action: TodayNextAction | null;
+  resume_session_id: UUID | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: UUID | null;
+  queue_counts: TodayQueueCounts;
 }
 
 export interface TodayStartRequest {
@@ -405,6 +467,10 @@ export interface TodayStartResponse {
   progress: TodayProgress;
   next_action: TodayNextAction;
   redirect_to: string;
+  resume_session_id: UUID | null;
+  today_queue: TodayQueueItem[];
+  focus_problem_id: UUID | null;
+  queue_counts: TodayQueueCounts;
 }
 
 export interface AnswerFlow {
@@ -609,6 +675,9 @@ export interface ImportProblemRequest {
   explanation?: string;
   tags?: string[];
   image_ref?: string;
+  source_name?: string;
+  source_url?: string;
+  license_note?: string;
 }
 
 export interface ImportProblemResponse {
@@ -617,13 +686,19 @@ export interface ImportProblemResponse {
   review_status: ReviewStatus;
 }
 
-export type ProblemReviewAction = "accept" | "hold" | "revise";
+export type ProblemReviewAction = "accept" | "hold" | "revise" | "reject";
 
 export interface UpdateProblemReviewStatusRequest {
   problem_id: UUID;
   action: ProblemReviewAction;
   section?: Section;
   sub_type?: string;
+  difficulty_estimate?: Difficulty;
+  source_name?: string;
+  source_url?: string;
+  license_note?: string;
+  corpus_tier?: ProblemCorpusTier;
+  curated_by?: string;
   tags?: string[];
   note?: string;
 }
@@ -632,11 +707,15 @@ export interface ProblemReviewStatusResponse {
   problem: Problem;
   parser: ProblemParseResult | null;
   review_status: ReviewStatus;
+  duplicate_count: number;
 }
 
 export interface ProblemReviewStatusQuery {
   problem_id?: UUID;
   review_status?: ReviewStatus;
+  curation_status?: ProblemCurationStatus;
+  corpus_tier?: ProblemCorpusTier;
+  import_batch_id?: UUID;
   section?: Section;
   source?: string;
   tag?: string;
@@ -648,11 +727,41 @@ export interface ProblemReviewStatusListResponse {
   total: number;
   filters_applied: {
     review_status: ReviewStatus | null;
+    curation_status: ProblemCurationStatus | null;
+    corpus_tier: ProblemCorpusTier | null;
+    import_batch_id: UUID | null;
     section: Section | null;
     source: string | null;
     tag: string | null;
     limit: number;
   };
+}
+
+export interface BulkImportProblemsRequest {
+  input_type: ProblemImportInputType;
+  raw_payload: string;
+  source_name?: string | null;
+  source_url?: string | null;
+  license_note?: string | null;
+  notes?: string | null;
+}
+
+export interface BulkImportProblemItem {
+  row_number: number;
+  problem: Problem;
+  parser: ProblemParseResult;
+  review_status: ReviewStatus;
+  duplicate_count: number;
+}
+
+export interface BulkImportProblemsResponse {
+  batch: ProblemImportBatch;
+  items: BulkImportProblemItem[];
+  total_rows: number;
+  created_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  errors: Array<{ row_number: number; message: string }>;
 }
 
 export interface WeaknessSummary {

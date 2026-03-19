@@ -7,7 +7,7 @@ import {
 import { getServerRepositories } from "@/lib/server/persistence/repositories";
 
 export async function POST(request: Request) {
-  const repositories = getServerRepositories();
+  const repositories = await getServerRepositories();
   const body = await request.json().catch(() => null);
   const parsed = postTodayCheckinSchema.safeParse(body);
 
@@ -21,6 +21,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const checkin = repositories.today.upsertCheckin(parsed.data);
+  const checkin = await repositories.today.upsertCheckin(parsed.data);
   return NextResponse.json(postTodayCheckinResponseSchema.parse({ checkin }));
 }

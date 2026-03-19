@@ -4,14 +4,50 @@ import { GET as getReviewReports } from "../src/app/api/review/reports/route";
 import { POST as createReport } from "../src/app/api/reports/route";
 import { POST as deepenReport } from "../src/app/api/reports/deepen/route";
 import { resetKnowledgeStackStoreForTests } from "../src/lib/server/knowledge-stack-store";
+import { createProblem, resetProblemsStoreForTests } from "../src/lib/server/problems-store";
 import { resetReportStoreForTests } from "../src/lib/server/report-store";
+import { createAttempt, createSession, resetSolveStoreForTests } from "../src/lib/server/solve-store";
 import { resetSummaryBookletStoreForTests } from "../src/lib/server/summary-booklet-store";
 
 beforeEach(() => {
+  resetProblemsStoreForTests();
+  resetSolveStoreForTests();
   resetReportStoreForTests();
   resetKnowledgeStackStoreForTests();
   resetSummaryBookletStoreForTests();
 });
+
+function seedAttemptContext(stem: string): string {
+  const problem = createProblem({
+    section: "verbal",
+    sub_type: "cr_strengthen",
+    difficulty: "medium",
+    content: {
+      stem,
+      choices: ["A", "B", "C", "D", "E"],
+      answer_index: 1,
+    },
+    tags: [],
+    source: "manual_capture",
+  });
+  const session = createSession({
+    session_type: "sprint_verbal",
+    duration_planned_min: 45,
+    problem_ids: [problem.id],
+    meta: {},
+  });
+  const attempt = createAttempt({
+    problem_id: problem.id,
+    session_id: session.id,
+    user_answer: 0,
+    is_correct: false,
+    time_spent_sec: 91,
+    exceeded_cutoff: false,
+    confidence: "guessed",
+    pre_think: null,
+  });
+  return attempt.id;
+}
 
 describe("review reports api", () => {
   it("returns empty-safe workbench payload", async () => {
@@ -42,12 +78,13 @@ describe("review reports api", () => {
   });
 
   it("returns inbox, filtered previews, and selected deep detail", async () => {
+    const quickAttemptId = seedAttemptContext("Quick review context");
     const quick = await createReport(
       new Request("http://localhost/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          attempt_id: crypto.randomUUID(),
+          attempt_id: quickAttemptId,
           my_frame: "결론을 다시 안 쓰고 선지로 바로 갔다.",
           correct_mechanism: "질문 요구와 결론 연결을 먼저 봐야 했다.",
           next_tool: "Q: 결론 직접 연결? -> F: 요구 재진술",
@@ -58,12 +95,13 @@ describe("review reports api", () => {
     );
     expect(quick.status).toBe(201);
 
+    const deepAttemptId = seedAttemptContext("Deep review context");
     const deepSource = await createReport(
       new Request("http://localhost/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          attempt_id: crypto.randomUUID(),
+          attempt_id: deepAttemptId,
           my_frame: "표현 유사성에 끌렸다.",
           correct_mechanism: "대안 원인을 제거해야 했다.",
           next_tool: "Q: 대안 원인? -> F: 인과 링크만 검증",
@@ -135,4 +173,3 @@ describe("review reports api", () => {
     expect(response.status).toBe(400);
   });
 });
-

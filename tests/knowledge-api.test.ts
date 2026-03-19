@@ -5,14 +5,50 @@ import { GET as getSummaryCards } from "../src/app/api/knowledge/summary-cards/r
 import { POST as createReport } from "../src/app/api/reports/route";
 import { POST as deepenReport } from "../src/app/api/reports/deepen/route";
 import { resetKnowledgeStackStoreForTests } from "../src/lib/server/knowledge-stack-store";
+import { createProblem, resetProblemsStoreForTests } from "../src/lib/server/problems-store";
 import { resetReportStoreForTests } from "../src/lib/server/report-store";
+import { createAttempt, createSession, resetSolveStoreForTests } from "../src/lib/server/solve-store";
 import { resetSummaryBookletStoreForTests } from "../src/lib/server/summary-booklet-store";
 
 beforeEach(() => {
+  resetProblemsStoreForTests();
+  resetSolveStoreForTests();
   resetReportStoreForTests();
   resetSummaryBookletStoreForTests();
   resetKnowledgeStackStoreForTests();
 });
+
+function seedAttemptContext(): string {
+  const problem = createProblem({
+    section: "verbal",
+    sub_type: "cr_strengthen",
+    difficulty: "medium",
+    content: {
+      stem: "Which choice most strengthens the argument?",
+      choices: ["A", "B", "C", "D", "E"],
+      answer_index: 1,
+    },
+    tags: [],
+    source: "manual_capture",
+  });
+  const session = createSession({
+    session_type: "sprint_verbal",
+    duration_planned_min: 45,
+    problem_ids: [problem.id],
+    meta: {},
+  });
+  const attempt = createAttempt({
+    problem_id: problem.id,
+    session_id: session.id,
+    user_answer: 0,
+    is_correct: false,
+    time_spent_sec: 92,
+    exceeded_cutoff: false,
+    confidence: "unsure",
+    pre_think: null,
+  });
+  return attempt.id;
+}
 
 describe("knowledge api", () => {
   it("rejects invalid limit query", async () => {
@@ -24,12 +60,13 @@ describe("knowledge api", () => {
   });
 
   it("returns promoted answer flows and summary cards with source trace", async () => {
+    const attemptId = seedAttemptContext();
     const created = await createReport(
       new Request("http://localhost/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          attempt_id: crypto.randomUUID(),
+          attempt_id: attemptId,
           my_frame: "결론을 재진술하지 않고 바로 선지를 봤다.",
           correct_mechanism: "대안 원인을 제거해 인과를 강화했다.",
           next_tool: "Q: 대안원인? -> F: 인과링크 유지",
